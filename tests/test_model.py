@@ -1,3 +1,19 @@
+"""
+test_model.py — Automated Quality Gate for Bike Sharing Demand Model
+=====================================================================
+This script validates the saved model against minimum performance
+standards before it can be accepted into the deployment pipeline.
+
+It loads the best model (model.joblib) from Task 1, runs predictions
+on the 2011 evaluation data, and checks three acceptance criteria:
+  1. RMSE must be at most 95% of the baseline (Linear Regression)
+  2. MAE must be at most 95% of the baseline
+  3. R-squared must exceed a minimum explanatory threshold
+
+If any criterion fails, the script exits with code 1, which causes
+the GitHub Actions workflow to report a red (failed) status.
+"""
+
 import pandas as pd
 import numpy as np
 import joblib
@@ -6,80 +22,94 @@ import os
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 
-def run_quality_gate():
-    """
-    Quality Gate: Loads the saved best model and evaluates it on the 2011 dataset.
-    The test passes only if the model meets minimum performance thresholds.
-    """
-    # --- Quality Gate Config ---
-    print("--- Quality Gate Config ---")
-    MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "model.joblib")
-    DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "day_2011.csv")
+# ── Acceptance criteria ──────────────────────────────────────────────
+# These baselines come from the Linear Regression model trained in Task 1.
+# The improved model must beat 95 % of these values to be deployable.
+BASELINE = {
+    "rmse": 690.51,
+    "mae":  501.26,
+}
+IMPROVEMENT_FACTOR = 0.95          # model must be within 95 % of baseline
+R2_FLOOR           = 0.80          # minimum acceptable R-squared
 
-    # Baseline metrics (from Linear Regression baseline model)
-    BASELINE_RMSE = 690.51
-    BASELINE_MAE = 501.26
-    R2_MIN = 0.8
-    QUALITY_FACTOR = 0.95
 
-    print(f"MODEL_PATH: {MODEL_PATH}")
-    print(f"DATA_PATH : {DATA_PATH}")
-    print(f"BASELINE RMSE: {BASELINE_RMSE}")
-    print(f"BASELINE MAE : {BASELINE_MAE}")
-    print(f"R2_MIN: {R2_MIN}")
-    print(f"QUALITY_FACTOR: {QUALITY_FACTOR}")
+def load_artefacts():
+    """Return the saved model and the evaluation dataframe."""
+    root = os.path.join(os.path.dirname(__file__), "..")
+    model = joblib.load(os.path.join(root, "model.joblib"))
+    df    = pd.read_csv(os.path.join(root, "data", "day_2011.csv"))
+    return model, df
 
-    # Compute thresholds
-    RMSE_THRESHOLD = QUALITY_FACTOR * BASELINE_RMSE
-    MAE_THRESHOLD = QUALITY_FACTOR * BASELINE_MAE
 
-    print(f"RMSE THRESHOLD: {RMSE_THRESHOLD}")
-    print(f"MAE THRESHOLD : {MAE_THRESHOLD}")
-    print(f"R2 MIN: {R2_MIN}")
-    print("=" * 40)
-
-    # Load model and data
-    model = joblib.load(MODEL_PATH)
-    df = pd.read_csv(DATA_PATH)
-
-    feature_cols = ["season", "mnth", "holiday", "weekday", "workingday",
-                    "weathersit", "temp", "atemp", "hum", "windspeed"]
-    X = df[feature_cols]
+def evaluate(model, df):
+    """Predict on the evaluation set and return RMSE, MAE, R2."""
+    features = ["season", "mnth", "holiday", "weekday", "workingday",
+                "weathersit", "temp", "atemp", "hum", "windspeed"]
+    X = df[features]
     y = df["cnt"]
+    y_hat = model.predict(X)
 
-    # Predict and evaluate
-    y_pred = model.predict(X)
-    rmse = np.sqrt(mean_squared_error(y, y_pred))
-    mae = mean_absolute_error(y, y_pred)
-    r2 = r2_score(y, y_pred)
+    rmse = np.sqrt(mean_squared_error(y, y_hat))
+    mae  = mean_absolute_error(y, y_hat)
+    r2   = r2_score(y, y_hat)
+    return rmse, mae, r2
 
-    print()
-    print("--- Model Performance ---")
-    print(f"RMSE: {rmse}")
-    print(f"MAE : {mae}")
-    print(f"R2  : {r2}")
-    print("=" * 40)
 
-    # Quality Gate Checks
-    print()
-    rmse_pass = rmse <= RMSE_THRESHOLD
-    mae_pass = mae <= MAE_THRESHOLD
-    r2_pass = r2 >= R2_MIN
+def check_gate(rmse, mae, r2):
+    """
+    Run each acceptance check and return a list of (name, passed, detail)
+    tuples so the log is easy to read.
+    """
+    max_rmse = IMPROVEMENT_FACTOR * BASELINE["rmse"]
+    max_mae  = IMPROVEMENT_FACTOR * BASELINE["mae"]
 
-    print(f"[{'PASS' if rmse_pass else 'FAIL'}] RMSE {rmse:.3f} <= {RMSE_THRESHOLD:.3f}")
-    print(f"[{'PASS' if mae_pass else 'FAIL'}] MAE {mae:.3f} <= {MAE_THRESHOLD:.3f}")
-    print(f"[{'PASS' if r2_pass else 'FAIL'}] R2 {r2:.3f} >= {R2_MIN}")
-    print()
+    checks = [
+        ("RMSE", rmse <= max_rmse,
+         f"{rmse:>10.2f}  (threshold: <= {max_rmse:.2f})"),
+        ("MAE",  mae  <= max_mae,
+         f"{mae:>10.2f}  (threshold: <= {max_mae:.2f})"),
+        ("R2",   r2   >= R2_FLOOR,
+         f"{r2:>10.4f}  (threshold: >= {R2_FLOOR})"),
+    ]
+    return checks
 
-    # Final gate decision
-    all_passed = rmse_pass and mae_pass and r2_pass
 
-    if all_passed:
-        print("Quality Gate: PASSED")
+def main():
+    print("=" * 58)
+    print("  AUTOMATED QUALITY GATE — Bike Sharing Demand Model")
+    print("=" * 58)
+
+    # Step 1 — load
+    model, df = load_artefacts()
+    print(f"\n  Model loaded   : model.joblib")
+    print(f"  Eval dataset   : data/day_2011.csv  ({len(df)} rows)")
+    print(f"  Baseline source: Linear Regression (Task 1)")
+    print(f"  Required improvement: {IMPROVEMENT_FACTOR * 100:.0f} % of baseline\n")
+
+    # Step 2 — evaluate
+    rmse, mae, r2 = evaluate(model, df)
+
+    print("-" * 58)
+    print("  Metric        Value          Acceptance Criterion")
+    print("-" * 58)
+
+    checks = check_gate(rmse, mae, r2)
+    failures = 0
+    for name, passed, detail in checks:
+        status = "OK" if passed else "FAIL"
+        print(f"  {name:<6}  {detail}   [{status}]")
+        if not passed:
+            failures += 1
+
+    print("-" * 58)
+
+    # Step 3 — verdict
+    if failures == 0:
+        print("\n  >> Quality Gate PASSED — model is ready for deployment.\n")
     else:
-        print("Quality Gate: FAILED")
+        print(f"\n  >> Quality Gate FAILED — {failures} check(s) did not meet threshold.\n")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    run_quality_gate()
+    main()

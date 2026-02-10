@@ -27,6 +27,6 @@ jobs:
         pip install pandas numpy scikit-learn joblib
         if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
 
-    - name: Run Quality Gate Test (PASS run on 2011)
+    - name: Run automated quality gate
       run: |
         python tests/test_model.py
