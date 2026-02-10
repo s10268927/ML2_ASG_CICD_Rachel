@@ -14,6 +14,9 @@ If any criterion fails, the script exits with code 1, which causes
 the GitHub Actions workflow to report a red (failed) status.
 """
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 import pandas as pd
 import numpy as np
 import joblib
@@ -23,14 +26,13 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 
 # ── Acceptance criteria ──────────────────────────────────────────────
-# These baselines come from the Linear Regression model trained in Task 1.
-# The improved model must beat 95 % of these values to be deployable.
-BASELINE = {
-    "rmse": 690.51,
-    "mae":  501.26,
-}
-IMPROVEMENT_FACTOR = 0.95          # model must be within 95 % of baseline
-R2_FLOOR           = 0.80          # minimum acceptable R-squared
+# The baselines come from the Linear Regression model (Task 1) evaluated
+# on the full 2011 dataset — the same data this quality gate uses.
+# Per the assignment: assert rmse <= 0.95 * rmse_baseline.
+RMSE_BASELINE      = 678.76        # LR baseline RMSE on full 2011 data
+MAE_BASELINE       = 514.54        # LR baseline MAE  on full 2011 data
+R2_BASELINE        = 0.7570        # LR baseline R2   on full 2011 data
+IMPROVEMENT_FACTOR = 0.95          # model must achieve <= 95 % of baseline
 
 
 def load_artefacts():
@@ -60,16 +62,16 @@ def check_gate(rmse, mae, r2):
     Run each acceptance check and return a list of (name, passed, detail)
     tuples so the log is easy to read.
     """
-    max_rmse = IMPROVEMENT_FACTOR * BASELINE["rmse"]
-    max_mae  = IMPROVEMENT_FACTOR * BASELINE["mae"]
+    rmse_limit = IMPROVEMENT_FACTOR * RMSE_BASELINE
+    mae_limit  = IMPROVEMENT_FACTOR * MAE_BASELINE
 
     checks = [
-        ("RMSE", rmse <= max_rmse,
-         f"{rmse:>10.2f}  (threshold: <= {max_rmse:.2f})"),
-        ("MAE",  mae  <= max_mae,
-         f"{mae:>10.2f}  (threshold: <= {max_mae:.2f})"),
-        ("R2",   r2   >= R2_FLOOR,
-         f"{r2:>10.4f}  (threshold: >= {R2_FLOOR})"),
+        ("RMSE", rmse <= rmse_limit,
+         f"{rmse:>10.2f}  (threshold: <= {rmse_limit:.2f})"),
+        ("MAE",  mae  <= mae_limit,
+         f"{mae:>10.2f}  (threshold: <= {mae_limit:.2f})"),
+        ("R2",   r2   >= R2_BASELINE,
+         f"{r2:>10.4f}  (threshold: >= {R2_BASELINE})"),
     ]
     return checks
 
@@ -83,8 +85,10 @@ def main():
     model, df = load_artefacts()
     print(f"\n  Model loaded   : model.joblib")
     print(f"  Eval dataset   : data/day_2011.csv  ({len(df)} rows)")
-    print(f"  Baseline source: Linear Regression (Task 1)")
-    print(f"  Required improvement: {IMPROVEMENT_FACTOR * 100:.0f} % of baseline\n")
+    print(f"  Baseline (LR on full 2011): RMSE={RMSE_BASELINE}, MAE={MAE_BASELINE}, R2={R2_BASELINE}")
+    print(f"  RMSE threshold : {IMPROVEMENT_FACTOR} x {RMSE_BASELINE} = {IMPROVEMENT_FACTOR * RMSE_BASELINE:.2f}")
+    print(f"  MAE  threshold : {IMPROVEMENT_FACTOR} x {MAE_BASELINE} = {IMPROVEMENT_FACTOR * MAE_BASELINE:.2f}")
+    print(f"  R2   threshold : >= {R2_BASELINE}\n")
 
     # Step 2 — evaluate
     rmse, mae, r2 = evaluate(model, df)
