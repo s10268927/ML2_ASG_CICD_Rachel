@@ -6,53 +6,80 @@ import os
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 
-def test_model_quality_gate():
+def run_quality_gate():
     """
     Quality Gate: Loads the saved best model and evaluates it on the 2011 dataset.
     The test passes only if the model meets minimum performance thresholds.
     """
-    # Load the saved model
-    model_path = os.path.join(os.path.dirname(__file__), "..", "model.joblib")
-    model = joblib.load(model_path)
-    print(f"Model loaded from {model_path}")
+    # --- Quality Gate Config ---
+    print("--- Quality Gate Config ---")
+    MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "model.joblib")
+    DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "day_2011.csv")
 
-    # Load evaluation data
-    data_path = os.path.join(os.path.dirname(__file__), "..", "data", "day_2011.csv")
-    df = pd.read_csv(data_path)
-    print(f"Data loaded from {data_path}, shape: {df.shape}")
+    # Baseline metrics (from Linear Regression baseline model)
+    BASELINE_RMSE = 690.51
+    BASELINE_MAE = 501.26
+    R2_MIN = 0.8
+    QUALITY_FACTOR = 0.95
 
-    # Prepare features
+    print(f"MODEL_PATH: {MODEL_PATH}")
+    print(f"DATA_PATH : {DATA_PATH}")
+    print(f"BASELINE RMSE: {BASELINE_RMSE}")
+    print(f"BASELINE MAE : {BASELINE_MAE}")
+    print(f"R2_MIN: {R2_MIN}")
+    print(f"QUALITY_FACTOR: {QUALITY_FACTOR}")
+
+    # Compute thresholds
+    RMSE_THRESHOLD = QUALITY_FACTOR * BASELINE_RMSE
+    MAE_THRESHOLD = QUALITY_FACTOR * BASELINE_MAE
+
+    print(f"RMSE THRESHOLD: {RMSE_THRESHOLD}")
+    print(f"MAE THRESHOLD : {MAE_THRESHOLD}")
+    print(f"R2 MIN: {R2_MIN}")
+    print("=" * 40)
+
+    # Load model and data
+    model = joblib.load(MODEL_PATH)
+    df = pd.read_csv(DATA_PATH)
+
     feature_cols = ["season", "mnth", "holiday", "weekday", "workingday",
                     "weathersit", "temp", "atemp", "hum", "windspeed"]
     X = df[feature_cols]
     y = df["cnt"]
 
-    # Predict
+    # Predict and evaluate
     y_pred = model.predict(X)
-
-    # Calculate metrics
     rmse = np.sqrt(mean_squared_error(y, y_pred))
     mae = mean_absolute_error(y, y_pred)
     r2 = r2_score(y, y_pred)
 
-    print(f"RMSE: {rmse:.2f}")
-    print(f"MAE: {mae:.2f}")
-    print(f"R2: {r2:.4f}")
+    print()
+    print("--- Model Performance ---")
+    print(f"RMSE: {rmse}")
+    print(f"MAE : {mae}")
+    print(f"R2  : {r2}")
+    print("=" * 40)
 
-    # --- Quality Gate Thresholds ---
-    # The baseline Linear Regression RMSE is approximately 1200.
-    # The improved model must achieve RMSE <= 0.95 * baseline_rmse.
-    rmse_baseline = 1200
-    rmse_threshold = 0.95 * rmse_baseline
+    # Quality Gate Checks
+    print()
+    rmse_pass = rmse <= RMSE_THRESHOLD
+    mae_pass = mae <= MAE_THRESHOLD
+    r2_pass = r2 >= R2_MIN
 
-    print(f"Quality Gate: RMSE must be <= {rmse_threshold:.2f} (95% of baseline RMSE {rmse_baseline})")
+    print(f"[{'PASS' if rmse_pass else 'FAIL'}] RMSE {rmse:.3f} <= {RMSE_THRESHOLD:.3f}")
+    print(f"[{'PASS' if mae_pass else 'FAIL'}] MAE {mae:.3f} <= {MAE_THRESHOLD:.3f}")
+    print(f"[{'PASS' if r2_pass else 'FAIL'}] R2 {r2:.3f} >= {R2_MIN}")
+    print()
 
-    # Assert quality gate
-    assert rmse <= rmse_threshold, (
-        f"QUALITY GATE FAILED: RMSE {rmse:.2f} exceeds threshold {rmse_threshold:.2f}"
-    )
-    print("QUALITY GATE PASSED: Model meets performance threshold.")
+    # Final gate decision
+    all_passed = rmse_pass and mae_pass and r2_pass
+
+    if all_passed:
+        print("Quality Gate: PASSED")
+    else:
+        print("Quality Gate: FAILED")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    test_model_quality_gate()
+    run_quality_gate()
