@@ -15,7 +15,7 @@ the GitHub Actions workflow to report a red (failed) status.
 """
 
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore")
 
 import pandas as pd
 import numpy as np
